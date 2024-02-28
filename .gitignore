@@ -2,3 +2,11 @@
 TNC/ckpt/*
 TNC/plots/*
 TNC/RAW_DATA/*
+**/__pycache__/
+**/.DS_Store
+old_README.md
+**/.idea
+datasets
+*.log
+*.pt
+*.zip
