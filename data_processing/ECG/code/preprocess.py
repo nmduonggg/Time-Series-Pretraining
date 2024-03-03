@@ -27,23 +27,33 @@ def process_single_dir(data_directory):
 
     # Extract the features and labels from the dataset.
 
-    data = np.zeros((num_recordings, 12, int(num_samples)), dtype=np.float32) # 14 features: one feature for each lead, one feature for age, and one feature for sex
+    data = [] # 14 features: one feature for each lead, one feature for age, and one feature for sex
     onehot_labels = np.zeros((num_recordings, num_classes), dtype=np.bool_) # One-hot encoding of classes
 
     for i in range(num_recordings):
 
         # Load header and recording.
         header = load_header(header_files[i])
-        recording = load_recording(recording_files[i])
-
-        data[i] = recording
+        recording = load_recording(recording_files[i])  
+        _, n_samples = recording.shape
+        
+        # real num samples > min num samples -> divide
+        
+        if n_samples > num_samples:
+            num_segments = int(n_samples // num_samples)
+            for i in range(num_segments-1):
+                data.append(recording[:, int(i*num_samples): int(i*num_samples+num_samples)])
+                
+        else:
+            data.append(recording)
 
         current_labels = get_labels(header)
         for label in current_labels:
             if label in classes:
                 j = classes.index(label)
                 onehot_labels[i, j] = 1
-                
+    data = np.stack(data, axis=0)
+    
     return data, onehot_labels
 
 def process_parent_dir(parent_directory):
@@ -61,13 +71,31 @@ def process_parent_dir(parent_directory):
         X, y = process_single_dir(data_dir)
         datas.append(X)
         labels.append(y)
-    datas = np.concatenate(datas)
-    labels = np.concatenate(labels)
     
-    print(datas.shape)
-    print(labels.shape)
+    return datas   
+
+def main():
+    raw_dir_path = '/mnt/disk4/nmduong/Time-Series-Pretraining/data_processing/ECG/RAW_DATA/files/challenge-2021/1.0.3/training'
+    save_dir_path = '/mnt/disk4/nmduong/Time-Series-Pretraining/data_processing/ECG/PROCESSED'
+    os.makedirs(save_dir_path, exist_ok=True)
+    all_data_dirs = [os.path.join(raw_dir_path, r) for r in os.listdir(raw_dir_path) if os.path.isdir(os.path.join(raw_dir_path, r))]
+    
+    cnt = 0
+    for dt_dir in all_data_dirs:
+        dt_name = dt_dir.split('/')[-1]
+        print('Processing %s ...'%dt_dir)
+        current_data_list = process_parent_dir(dt_dir)
         
+        for i, current_data in enumerate(current_data_list):
+            save_path = os.path.join(save_dir_path, f'{dt_name}')
+            os.makedirs(save_path, exist_ok=True)
+            save_path = os.path.join(save_path, f'x{i}.npy')
+            np.save(save_path, current_data)
+            
+            cnt += current_data.shape[0]
     
+    print("Detect and process %d samples with multiple leads" % cnt)
+        
+        
 if __name__ == '__main__':
-    data_directory = "/mnt/disk4/nmduong/Time-Series-Pretraining/data_processing/ECG/RAW_DATA/files/challenge-2021/1.0.3/training/chapman_shaoxing"
-    process_parent_dir(data_directory)
+    main()
