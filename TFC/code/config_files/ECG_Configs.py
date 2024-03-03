@@ -11,28 +11,28 @@ class Config(object):
         self.features_len = 18
 
         # training configs
-        self.num_epoch = 100# 40
+        self.num_epoch = 1000# 40
 
         # optimizer parameters
         self.beta1 = 0.9
         self.beta2 = 0.99
-        self.lr =  3e-6 # 3e-4
+        self.lr =  1e-4 # 3e-4
 
         # data parameters
         self.drop_last = True
-        self.batch_size = 128
+        self.batch_size = 64
 
         self.Context_Cont = Context_Cont_configs()
         self.TC = TC()
         self.augmentation = augmentations()
 
         """New hyperparameters"""
-        self.TSlength_aligned = 1500
-        self.lr_f = self.lr
-        self.target_batch_size = 41# 82 # 41
+        self.TSlength_aligned = 1000
+        self.lr_f = 1e-4
+        self.target_batch_size = 64 # 82 # 41
         self.increased_dim = 1
         self.final_out_channels = 128
-        self.num_classes_target = 3
+        self.num_classes_target = 4
         self.features_len_f = self.features_len
         self.CNNoutput_channel = 190 # 751#
 

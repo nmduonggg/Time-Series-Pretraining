@@ -10,3 +10,5 @@ datasets
 *.log
 *.pt
 *.zip
+data_processing/ECG/RAW_DATA/*
+data_processing/ECG/PROCESSED/*

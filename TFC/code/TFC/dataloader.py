@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 import os
 import numpy as np
-from augmentations import DataTransform_FD, DataTransform_TD
+from augmentations import *
 import torch.fft as fft
 
 def generate_freq(dataset, config):
@@ -62,8 +62,8 @@ class Load_Dataset(Dataset):
         if subset == True:
             subset_size = target_dataset_size * 10 #30 #7 # 60*1
             """if the dimension is larger than 178, take the first 178 dimensions. If multiple channels, take the first channel"""
-            X_train = X_train[:subset_size]
-            y_train = y_train[:subset_size]
+            X_train = X_train[:subset_size, ...]
+            y_train = y_train[:subset_size, ...]
             print('Using subset for debugging, the datasize is:', y_train.shape[0])
 
         if isinstance(X_train, np.ndarray):
@@ -82,7 +82,7 @@ class Load_Dataset(Dataset):
 
         """Augmentation"""
         if training_mode == "pre_train":  # no need to apply Augmentations in other modes
-            self.aug1 = DataTransform_TD(self.x_data, config)
+            self.aug1 = DataTransform_TD_bank(self.x_data, config)
             self.aug1_f = DataTransform_FD(self.x_data_f, config) # [7360, 1, 90]
 
     def __getitem__(self, index):
@@ -109,7 +109,7 @@ def data_generator(sourcedata_path, targetdata_path, configs, training_mode, sub
     train_dataset = Load_Dataset(train_dataset, configs, training_mode, target_dataset_size=configs.batch_size, subset=subset) # for self-supervised, the data are augmented here
     finetune_dataset = Load_Dataset(finetune_dataset, configs, training_mode, target_dataset_size=configs.target_batch_size, subset=subset)
     test_dataset = Load_Dataset(test_dataset, configs, training_mode,
-                                target_dataset_size=configs.target_batch_size, subset=False)
+                                target_dataset_size=configs.target_batch_size, subset=subset)
 
     train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=configs.batch_size,
                                                shuffle=True, drop_last=configs.drop_last,

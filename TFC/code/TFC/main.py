@@ -24,6 +24,7 @@ parser.add_argument('--seed', default=42, type=int, help='seed value')
 # 1. self_supervised pre_train; 2. finetune (itself contains finetune and test)
 parser.add_argument('--training_mode', default='fine_tune_test', type=str,
                     help='pre_train, fine_tune_test')
+parser.add_argument('--use_pretrain', action='store_true', help='use pretrain or not')
 
 parser.add_argument('--pretrain_dataset', default='SleepEEG', type=str,
                     help='Dataset of choice: SleepEEG, FD_A, HAR, ECG')
@@ -54,6 +55,7 @@ method = 'TF-C'
 training_mode = args.training_mode
 run_description = args.run_description
 logs_save_dir = args.logs_save_dir
+use_pretrain = args.use_pretrain
 os.makedirs(logs_save_dir, exist_ok=True)
 exec(f'from config_files.{pretrain_dataset}_Configs import Config as Configs')
 configs = Configs()
@@ -66,7 +68,7 @@ torch.backends.cudnn.benchmark = False
 np.random.seed(SEED)
 #####################################################
 
-experiment_log_dir = os.path.join(logs_save_dir, experiment_description, run_description, training_mode + f"_seed_{SEED}_2layertransformer")
+experiment_log_dir = os.path.join(logs_save_dir, experiment_description, run_description, training_mode + f"_seed_{SEED}_inception1dbase")
 # 'experiments_logs/Exp1/run1/train_linear_seed_0'
 os.makedirs(experiment_log_dir, exist_ok=True)
 
@@ -89,27 +91,34 @@ logger.debug("=" * 45)
 # Load datasets
 sourcedata_path = f"../../datasets/{pretrain_dataset}"
 targetdata_path = f"../../datasets/{targetdata}"
-subset = True  # if subset= true, use a subset for debugging.
+subset = False # if subset= true, use a subset for debugging.
 train_dl, valid_dl, test_dl = data_generator(sourcedata_path, targetdata_path, configs, training_mode, subset = subset)
 logger.debug("Data loaded ...")
 
 # Load Model
 """Here are two models, one basemodel, another is temporal contrastive model"""
-TFC_model = TFC(configs).to(device)
+TFC_model = ConvTFC(configs).to(device)
 classifier = target_classifier(configs).to(device)
 temporal_contr_model = None
 
-
-if training_mode == "fine_tune_test":
+if training_mode == "fine_tune_test" and use_pretrain:
     # load saved model of this experiment
     load_from = os.path.join(os.path.join(logs_save_dir, experiment_description, run_description,
-    f"pre_train_seed_{SEED}_2layertransformer", "saved_models"))
+    f"pre_train_seed_{SEED}_inception1dbase", "saved_models"))
     print("The loading file path", load_from)
+    
     chkpoint = torch.load(os.path.join(load_from, "ckp_last.pt"), map_location=device)
     pretrained_dict = chkpoint["model_state_dict"]
     TFC_model.load_state_dict(pretrained_dict)
 
-model_optimizer = torch.optim.Adam(TFC_model.parameters(), lr=configs.lr, betas=(configs.beta1, configs.beta2), weight_decay=3e-4)
+else:
+    print("Not use pretrain, train from scratch")
+
+for md in [TFC_model, classifier]:
+    for pram in md.parameters():
+        pram.require_grads=True
+        
+model_optimizer = torch.optim.Adam(TFC_model.parameters(), lr=configs.lr_f, betas=(configs.beta1, configs.beta2), weight_decay=3e-4)
 classifier_optimizer = torch.optim.Adam(classifier.parameters(), lr=configs.lr, betas=(configs.beta1, configs.beta2), weight_decay=3e-4)
 
 # Trainer
