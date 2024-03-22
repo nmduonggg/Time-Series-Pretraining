@@ -1,0 +1,141 @@
+from torch import nn
+import torch
+import torch.nn.functional as F
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
+
+"""Two contrastive encoders"""
+
+class ConvTFC(nn.Module):
+    def __init__(self, configs):
+        super(ConvTFC, self).__init__()
+
+        
+        self.encoder_t = Inception1DBase(input_channels=1)
+
+        self.projector_t = nn.Sequential(
+            nn.Linear(128, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Linear(256, 128)
+        )
+
+        self.encoder_f = Inception1DBase(input_channels=1)
+
+        self.projector_f = nn.Sequential(
+            nn.Linear(128, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Linear(256, 128)
+        )
+
+
+    def forward(self, x_in_t, x_in_f):
+        """Use Transformer"""
+        x = self.encoder_t(x_in_t)
+        h_time = x.reshape(x.shape[0], -1)
+
+        """Cross-space projector"""
+        z_time = self.projector_t(h_time)
+
+        """Frequency-based contrastive encoder"""
+        f = self.encoder_f(x_in_f)
+        h_freq = f.reshape(f.shape[0], -1)
+
+        """Cross-space projector"""
+        z_freq = self.projector_f(h_freq)
+
+        return h_time, z_time, h_freq, z_freq
+
+class InceptionBlock1D(nn.Module):
+    def __init__(self, input_channels):
+        super(InceptionBlock1D, self).__init__()
+        self.input_channels = input_channels
+        self.bottleneck = nn.Conv1d(self.input_channels, 32, kernel_size=1, stride=1, bias=False)
+        self.convs_conv1 = nn.Conv1d(32, 32, kernel_size=39, stride=1, padding=19, bias=False)
+        self.convs_conv2 = nn.Conv1d(32, 32, kernel_size=19, stride=1, padding=9, bias=False)
+        self.convs_conv3 = nn.Conv1d(32, 32, kernel_size=9, stride=1, padding=4, bias=False)
+        self.convbottle_maxpool = nn.MaxPool1d(kernel_size=3, stride=1, padding=1, dilation=1, ceil_mode=False)
+        self.convbottle_conv = nn.Conv1d(self.input_channels, 32, kernel_size=1, stride=1, bias=False)
+        self.bnrelu_bn = nn.BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        self.bnrelu_relu = nn.ReLU()
+        
+    def forward(self, x):
+        bottled = self.bottleneck(x)
+        y = torch.cat([
+            self.convs_conv1(bottled),
+            self.convs_conv2(bottled),
+            self.convs_conv3(bottled),
+            self.convbottle_conv(self.convbottle_maxpool(x))
+        ], dim=1)
+        out = self.bnrelu_relu(self.bnrelu_bn(y))
+        return out
+
+class Shortcut1D(nn.Module):
+    def __init__(self, input_channels):
+        super(Shortcut1D, self).__init__()
+        self.input_channels = input_channels
+        self.act_fn = nn.ReLU(inplace=True)
+        self.conv = nn.Conv1d(self.input_channels, 128, kernel_size=1, stride=1, bias=False)
+        self.bn = nn.BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    def forward(self, inp, out):
+        return self.act_fn(out + self.bn(self.conv(inp)))
+        
+class Inception1DBase(nn.Module):
+    def __init__(self, input_channels=1):
+        super(Inception1DBase, self).__init__()
+        self.input_channels = input_channels
+        # inception backbone
+        self.inceptionbackbone_1 = InceptionBlock1D(input_channels=self.input_channels)
+        self.inceptionbackbone_2 = InceptionBlock1D(input_channels=128)
+        self.inceptionbackbone_3 = InceptionBlock1D(input_channels=128)
+        self.inceptionbackbone_4 = InceptionBlock1D(input_channels=128)
+        self.inceptionbackbone_5 = InceptionBlock1D(input_channels=128)
+        self.inceptionbackbone_6 = InceptionBlock1D(input_channels=128)
+        # shortcut
+        self.shortcut_1 = Shortcut1D(input_channels=self.input_channels)
+        self.shortcut_2 = Shortcut1D(input_channels=128)
+        # pooling
+        self.ap = nn.AdaptiveAvgPool1d(output_size=1)
+        self.mp = nn.AdaptiveMaxPool1d(output_size=1)
+        # flatten
+        self.flatten = nn.Flatten()
+        self.bn_1 = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        self.dropout_1 = nn.Dropout(p=0.25, inplace=False)
+        self.ln_1 = nn.Linear(256, 128, bias=True)
+        self.relu = nn.ReLU(inplace=True)
+        self.bn_2 = nn.BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        self.dropout_2 = nn.Dropout(p=0.5, inplace=False)
+        # self.ln_2 = nn.Linear(128, 71, bias=True)
+    def forward(self, x):
+        # inception backbone
+        input_res = x
+        x = self.inceptionbackbone_1(x)
+        x = self.inceptionbackbone_2(x)
+        x = self.inceptionbackbone_3(x)
+        x = self.shortcut_1(input_res, x)
+        input_res = x.clone()
+        x = self.inceptionbackbone_4(x)
+        x = self.inceptionbackbone_5(x)
+        x = self.inceptionbackbone_6(x)
+        x = self.shortcut_2(input_res, x)
+        # head
+        x = torch.cat([self.mp(x), self.ap(x)], dim=1)
+        x = self.flatten(x)
+        x = self.bn_1(x)
+        x = self.dropout_1(x)
+        x = self.ln_1(x)
+        x = self.relu(x)
+        x = self.bn_2(x)
+        x = self.dropout_2(x)
+        return x
+
+class target_classifier(nn.Module):
+    def __init__(self, configs):
+        super(target_classifier, self).__init__()
+        self.logits = nn.Linear(2*128, 64)
+        self.logits_simple = nn.Linear(64, configs.num_classes_target)
+
+    def forward(self, emb):
+        emb = F.relu(self.logits(emb))
+        pred = self.logits_simple(emb)
+        return pred

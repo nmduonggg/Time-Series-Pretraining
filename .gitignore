@@ -12,4 +12,8 @@ datasets
 *.zip
 data_processing/ECG/RAW_DATA/*
 data_processing/ECG/PROCESSED/*
+data_processing/ECG/SPECIFIC_DATA/*
 Brant/pretrain_weights
+TFC/code/experiments_logs/*
+TFC/code/TFC/experiments_logs/*
+TFC/code/TFC/wandb
