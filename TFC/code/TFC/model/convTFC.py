@@ -5,9 +5,38 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 """Two contrastive encoders"""
 
+
 class ConvTFC(nn.Module):
     def __init__(self, configs):
         super(ConvTFC, self).__init__()
+        
+        self.n_leads = 12
+        self.convs = nn.ModuleList([
+            ConvLead(configs) for _ in range(self.n_leads)
+        ])
+        
+        self.projs = nn.ModuleList([
+            nn.Linear(128*2, 128) for _ in range(self.n_leads)
+        ])
+        self.fuser = nn.Linear(128*12, 128*2)
+        
+    def forward(self, x_in_t, x_in_f):
+        
+        all_z_out = []
+        for l in range(self.n_leads):
+            
+            x_in_t_1 = x_in_t[:, l:l+1, :]
+            x_in_f_1 = x_in_f[:, l:l+1, :]
+            _, z_time_1, _, z_freq_1 = self.convs[l](x_in_t_1, x_in_f_1)
+            z_out = self.projs[l](torch.cat([z_time_1, z_freq_1], dim=1))
+            all_z_out.append(z_out)
+            
+        out = self.fuser(torch.cat(all_z_out, dim=1))
+        return out
+
+class ConvLead(nn.Module):
+    def __init__(self, configs):
+        super(ConvLead, self).__init__()
 
         
         self.encoder_t = Inception1DBase(input_channels=1)
@@ -27,7 +56,6 @@ class ConvTFC(nn.Module):
             nn.ReLU(),
             nn.Linear(256, 128)
         )
-
 
     def forward(self, x_in_t, x_in_f):
         """Use Transformer"""
@@ -86,14 +114,8 @@ class Inception1DBase(nn.Module):
         self.input_channels = input_channels
         # inception backbone
         self.inceptionbackbone_1 = InceptionBlock1D(input_channels=self.input_channels)
-        self.inceptionbackbone_2 = InceptionBlock1D(input_channels=128)
-        self.inceptionbackbone_3 = InceptionBlock1D(input_channels=128)
-        self.inceptionbackbone_4 = InceptionBlock1D(input_channels=128)
-        self.inceptionbackbone_5 = InceptionBlock1D(input_channels=128)
-        self.inceptionbackbone_6 = InceptionBlock1D(input_channels=128)
         # shortcut
         self.shortcut_1 = Shortcut1D(input_channels=self.input_channels)
-        self.shortcut_2 = Shortcut1D(input_channels=128)
         # pooling
         self.ap = nn.AdaptiveAvgPool1d(output_size=1)
         self.mp = nn.AdaptiveMaxPool1d(output_size=1)
@@ -103,30 +125,20 @@ class Inception1DBase(nn.Module):
         self.dropout_1 = nn.Dropout(p=0.25, inplace=False)
         self.ln_1 = nn.Linear(256, 128, bias=True)
         self.relu = nn.ReLU(inplace=True)
-        self.bn_2 = nn.BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-        self.dropout_2 = nn.Dropout(p=0.5, inplace=False)
         # self.ln_2 = nn.Linear(128, 71, bias=True)
     def forward(self, x):
         # inception backbone
         input_res = x
         x = self.inceptionbackbone_1(x)
-        x = self.inceptionbackbone_2(x)
-        x = self.inceptionbackbone_3(x)
         x = self.shortcut_1(input_res, x)
-        input_res = x.clone()
-        x = self.inceptionbackbone_4(x)
-        x = self.inceptionbackbone_5(x)
-        x = self.inceptionbackbone_6(x)
-        x = self.shortcut_2(input_res, x)
+        
         # head
         x = torch.cat([self.mp(x), self.ap(x)], dim=1)
         x = self.flatten(x)
         x = self.bn_1(x)
         x = self.dropout_1(x)
         x = self.ln_1(x)
-        x = self.relu(x)
-        x = self.bn_2(x)
-        x = self.dropout_2(x)
+
         return x
 
 class target_classifier(nn.Module):

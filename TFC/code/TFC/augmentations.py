@@ -38,16 +38,16 @@ def DataTransform_TD_bank(sample, config):
     You may use this one the replace the above DataTransform_TD function."""
     aug_1 = jitter(sample, config.augmentation.jitter_ratio)
     aug_2 = scaling(sample, config.augmentation.jitter_scale_ratio)
-    aug_3 = permutation(sample, max_segments=config.augmentation.max_seg)
+    # aug_3 = permutation(sample, max_segments=config.augmentation.max_seg)
     aug_4 = masking(sample, keepratio=0.9)
 
     li = np.random.randint(0, 4, size=[sample.shape[0]])
     li_onehot = one_hot_encoding(li)
     aug_1 = aug_1 * li_onehot[:, 0][:, None, None]  # the rows that are not selected are set as zero.
     aug_2 = aug_2 * li_onehot[:, 0][:, None, None]
-    aug_3 = aug_3 * li_onehot[:, 0][:, None, None]
+    # aug_3 = aug_3 * li_onehot[:, 0][:, None, None]
     aug_4 = aug_4 * li_onehot[:, 0][:, None, None]
-    aug_T = aug_1 + aug_2 + aug_3 + aug_4
+    aug_T = aug_1 + aug_2 + aug_4
     return aug_T
 
 def DataTransform_FD(sample, config):

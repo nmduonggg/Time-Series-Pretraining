@@ -18,11 +18,19 @@ class ECGDataset(Dataset):
         # |-X1.npy, X2.npy, etc. (each for 1 sample)
         # |-X.npy (all samples)
         
-        X_train = np.load(os.path.join(folder, 'X_train.npy' if self.train else 'X_test.npy'))
+        if self.train:
+            X_train = np.load(os.path.join(folder, 'x_train.npy'))
+        else:
+            X_train = np.load(os.path.join(folder, 'x_test.npy'))
+            
         if training_mode != 'pre_train':
-            y_train = np.load(os.path.join(folder, 'y_train.npy' if self.train else 'y_test.npy'))
+            y_train = np.load(os.path.join(folder, 'y_train.npy' if self.train else 'y_test.npy'), allow_pickle=True)
         else:
             y_train = None 
+            
+        X_train = np.transpose(X_train, axes=(0, 2, 1)) # NxTxC -> NxCxT
+        
+        print(X_train.shape, y_train.shape)
     
         
         # """Align the TS length between source and target datasets"""
@@ -43,14 +51,20 @@ class ECGDataset(Dataset):
             self.x_data = X_train
             self.y_data = y_train
             
-        self.x_data = self.x_data.unsqueeze(1)  # to [Nx1x1000]
+        if self.x_data.ndim==2:
+            self.x_data = self.x_data.unsqueeze(1)  # to [Nx1x1000]
         # print(self.x_data.shape)
 
         """Transfer x_data to Frequency Domain. If use fft.fft, the output has the same shape; if use fft.rfft, 
         the output shape is half of the time window."""
 
         window_length = self.x_data.shape[-1]
-        self.x_data_f = fft.fft(self.x_data).abs() #/(window_length) # rfft for real value inputs.
+        if self.x_data.shape[1] > 1:
+            x_data_f = torch.zeros_like(self.x_data)
+            for c in range(self.x_data.shape[1]):
+                x_data_f[:, c:c+1, :] = fft.fft(self.x_data[:, c:c+1, :]).abs()
+            # self.x_data_f =  #/(window_length) # rfft for real value inputs.
+            self.x_data_f = x_data_f
         self.len = X_train.shape[0]
 
         """Augmentation"""
@@ -84,7 +98,7 @@ class ECGPretrain(Dataset):
         # |-X.npy (all samples)
         
         
-        self.len = 6300000  # faster loading
+        self.len = 5400000  # faster loading
         self.y_data = None
         self.config = config
         
@@ -107,10 +121,11 @@ class ECGPretrain(Dataset):
                 x = torch.from_numpy(x)
             else:
                 x = x
-            x = x.reshape(1, 1, -1)  # 1x1x1000
-            # print(x.shape)
             x_f = fft.fft(x).abs()
-            aug1 = DataTransform_TD_bank(x, self.config)
+            x = x.reshape(1, 1, -1)  # 1x1x1000
+            x_f = x_f.reshape(1, 1, -1)
+            # print(x.shape)
+            aug1 = DataTransform_TD(x, self.config)
             aug1_f = DataTransform_FD(x_f, self.config)
             self.y_data = torch.zeros(1)
             return x.squeeze(0), self.y_data, aug1.squeeze(0), x_f.squeeze(0), aug1_f.squeeze(0)

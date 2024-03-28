@@ -5,7 +5,7 @@ import argparse
 import torch
 
 from utils import _logger
-from model import get_model
+from model import get_model, reconstruct_conv_lead
 # from dataloader import data_generator
 from dataloader_custom import data_generator
 from trainer import Trainer
@@ -18,7 +18,8 @@ home_dir = os.getcwd()
 parser.add_argument('--run_description', default='run1', type=str,
                     help='Experiment Description')
 parser.add_argument('--seed', default=42, type=int, help='seed value')
-
+parser.add_argument('--wandb', action='store_true')
+parser.add_argument('--subset', action='store_true')
 # Model selection
 parser.add_argument("--model", default="cnn", type=str,
                     help="CNN or Transformer-based TFC encoder")
@@ -95,9 +96,9 @@ logger.debug("=" * 45)
 # Load datasets
 # sourcedata_path = f"../../datasets/{pretrain_dataset}"
 # targetdata_path = f"../../datasets/{targetdata}"
-sourcedata_path = "/mnt/disk4/nmduong/Time-Series-Pretraining/data_processing/ECG/SPECIFIC_DATA/TFC/pretrain"
-targetdata_path = "/mnt/disk4/nmduong/Time-Series-Pretraining/data_processing/ECG/SPECIFIC_DATA/TFC/finetune"
-subset = False # if subset= true, use a subset for debugging.
+sourcedata_path = "/mnt/disk1/nmduong/ECG-Pretrain/data_processing/ECG/SPECIFIC_DATA/TFC/pretrain"
+targetdata_path = "/mnt/disk1/nmduong/ECG-Pretrain/data_processing/ECG/PROCESSED/PTBXL_REDUCE/"
+subset = args.subset # if subset= true, use a subset for debugging.
 train_dl, valid_dl, test_dl = data_generator(sourcedata_path, targetdata_path, configs, training_mode, subset = subset)
 logger.debug("Data loaded ...")
 
@@ -110,15 +111,26 @@ temporal_contr_model = None
 
 if use_pretrain:
     # load saved model of this experiment
-    # load_from = os.path.join(os.path.join(logs_save_dir, experiment_description, run_description, args.model,
-    # f"pre_train_seed_{SEED}", "saved_models"))
-    load_from = '/mnt/disk4/nmduong/Time-Series-Pretraining/TFC/code/experiments_logs/ECG2PTBXL/ecgOnly/pre_train_seed_42_inception1dbase/saved_models/'
+    load_from = os.path.join(os.path.join(logs_save_dir, experiment_description, run_description, args.model,
+    f"pre_train_seed_{SEED}", "saved_models"))
+    # load_from = '/mnt/disk4/nmduong/Time-Series-Pretraining/TFC/code/experiments_logs/ECG2PTBXL/ecgOnly/pre_train_seed_42_inception1dbase/saved_models/'
     
     print("The loading file path", load_from)
     
     chkpoint = torch.load(os.path.join(load_from, "ckp_last.pt"), map_location=device)
     pretrained_dict = chkpoint["model_state_dict"]
-    TFC_model.load_state_dict(pretrained_dict)
+    
+    try:
+        torch.save(pretrained_dict, os.path.join(load_from, "ckp_last_bkup.pt"))
+        print("Backup checkpoint saved")
+        TFC_model.load_state_dict(pretrained_dict, strict=True)
+        print("Load for pretrain")
+    except:
+        pretrained_dict = reconstruct_conv_lead(pretrained_dict)
+        TFC_model.load_state_dict(pretrained_dict, strict=False)
+        print("Load for finetune")
+    # print(pretrained_dict.keys())
+    # print(TFC_model.state_dict().keys())
 
 else:
     print("Not use pretrain, train from scratch")
