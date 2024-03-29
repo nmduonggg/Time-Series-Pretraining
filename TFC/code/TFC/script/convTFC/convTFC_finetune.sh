@@ -5,4 +5,4 @@ CUDA_VISIBLE_DEVICES=1 python main.py \
     --target_dataset PTBXL \
     --training_mode fine_tune_test \
     --use_pretrain \
-    --wandb
+    # --wandb \

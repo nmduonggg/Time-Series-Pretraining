@@ -127,6 +127,7 @@ if use_pretrain:
         print("Load for pretrain")
     except:
         pretrained_dict = reconstruct_conv_lead(pretrained_dict)
+        print(pretrained_dict)
         TFC_model.load_state_dict(pretrained_dict, strict=False)
         print("Load for finetune")
     # print(pretrained_dict.keys())

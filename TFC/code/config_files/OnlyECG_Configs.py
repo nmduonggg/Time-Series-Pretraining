@@ -1,18 +1,18 @@
 class Config(object):
     def __init__(self):
         # model configs
-        self.num_classes = 23
+        self.num_classes = 8
 
         # training configs
-        self.num_epoch = 1000# 40
+        self.num_epoch = 500# 40
 
         # optimizer parameters
         self.beta1 = 0.9
         self.beta2 = 0.99
-        self.lr =  5e-5 # 3e-4
+        self.lr =  1e-4 # 3e-4
 
         # data parameters
-        self.batch_size = 32
+        self.batch_size = 200
         self.drop_last = True
 
         self.Context_Cont = Context_Cont_configs()
@@ -21,11 +21,11 @@ class Config(object):
 
         """New hyperparameters"""
         self.TSlength_aligned = 1000
-        self.lr_f = 5e-5
-        self.target_batch_size = 100 # 82 # 41
+        self.lr_f = 1e-4
+        self.target_batch_size = 64 # 82 # 41
         self.increased_dim = 1
         self.final_out_channels = 128
-        self.num_classes_target = 23
+        self.num_classes_target = 8
 
 class augmentations(object):
     def __init__(self):

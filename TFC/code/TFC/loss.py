@@ -75,10 +75,10 @@ class NTXentLoss_poly(torch.nn.Module):
         self.mask_samples_from_same_repr = self._get_correlated_mask().type(torch.bool)
         self.similarity_function = self._get_similarity_function(use_cosine_similarity)
         self.criterion = torch.nn.CrossEntropyLoss(reduction="sum")
+        self.bce = torch.nn.BCEWithLogitsLoss(reduction="mean")
 
     def _get_similarity_function(self, use_cosine_similarity):
         if use_cosine_similarity:
-            self._cosine_similarity = torch.nn.CosineSimilarity(dim=-1)
             return self._cosine_simililarity
         else:
             return self._dot_simililarity
@@ -93,7 +93,7 @@ class NTXentLoss_poly(torch.nn.Module):
 
     @staticmethod
     def _dot_simililarity(x, y):
-        v = torch.tensordot(x.unsqueeze(1), y.T.unsqueeze(0), dims=2)
+        v = x @ y.t()
         # x shape: (N, 1, C)
         # y shape: (1, C, 2N)
         # v shape: (N, 2N)
@@ -103,13 +103,15 @@ class NTXentLoss_poly(torch.nn.Module):
         # x shape: (N, 1, C)
         # y shape: (1, 2N, C)
         # v shape: (N, 2N)
-        v = self._cosine_similarity(x.unsqueeze(1), y.unsqueeze(0))
+        x = x / x.norm(dim=-1, keepdim=True)
+        y = y / y.norm(dim=-1, keepdim=True)
+        v = x @ y.t()
         return v
 
     def forward(self, zis, zjs):
-        representations = torch.cat([zjs, zis], dim=0)
-
+        representations = torch.cat([zjs, zis], dim=0)  # 2NxC
         similarity_matrix = self.similarity_function(representations, representations)
+        # print(torch.isnan(similarity_matrix).any())
 
         # filter out the scores from the positive samples
         l_pos = torch.diag(similarity_matrix, self.batch_size)
@@ -133,10 +135,38 @@ class NTXentLoss_poly(torch.nn.Module):
         # loss = CE/ (2 * self.batch_size) + epsilon*(1-pt) # replace 1 by 1/self.batch_size
         loss = CE / (2 * self.batch_size) + epsilon * (1/self.batch_size - pt)
         # loss = CE / (2 * self.batch_size)
-
         return loss
+    
+    # def forward(self, zis, zjs):
+    #     representations = torch.cat([zjs, zis], dim=0)  # 2NxC
+    #     # similarity_matrix = self.similarity_function(representations, representations)
+    #     representations = representations / representations.norm(dim=-1, keepdim=True)
+    #     # print(representations.min())
+    #     similarity_matrix = torch.matmul(representations, representations.t())
+    #     # print(similarity_matrix)
 
+    #     # filter out the scores from the positive samples
+    #     positive_mask = 1 - self.mask_samples_from_same_repr.float()
 
+    #     logits = similarity_matrix / self.temperature
+    #     # logits /= self.temperature
+
+    #     """Criterion has an internal one-hot function. Here, make all positives as 1 while all negatives as 0. """
+    #     labels = positive_mask.float()
+    #     # print(labels)
+    #     CE = self.bce(logits, labels)
+
+    #     # onehot_label = torch.cat((torch.ones(2 * self.batch_size, 1),torch.zeros(2 * self.batch_size, negatives.shape[-1])),dim=-1).to(self.device).long()
+    #     # # Add poly loss
+    #     # pt = torch.mean(onehot_label* torch.nn.functional.softmax(logits,dim=-1))
+
+    #     # epsilon = self.batch_size
+    #     # loss = CE/ (2 * self.batch_size) + epsilon*(1-pt) # replace 1 by 1/self.batch_size
+    #     # loss = CE / (2 * self.batch_size) + epsilon * (1/self.batch_size - pt)
+    #     # loss = CE / (2 * self.batch_size)
+    #     loss = CE
+    #     print(loss)
+    #     return loss
 
 
 class hierarchical_contrastive_loss(torch.nn.Module):

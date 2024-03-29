@@ -1,6 +1,3 @@
-"""
-Filtering and cleaning ptbxl data for TFC
-"""
 import os
 import numpy as np
 from tqdm import tqdm
@@ -50,8 +47,8 @@ def separate_by_labels(use_for_test):
     return X1, Y, Xn
 
 def main():
-    single_labels_X, single_labels_Y, multi_labels_X = separate_by_labels(use_for_test)
-    print('Done processing test dataset')
+    # single_labels_X, single_labels_Y, multi_labels_X = separate_by_labels(use_for_test)
+    # print('Done processing test dataset')
     pretrain_names = [f for f in os.listdir(processed_folder) if use_for_test not in f]
     cnt = 0
     for name in pretrain_names:
@@ -61,22 +58,23 @@ def main():
             np.save(os.path.join(out_dir_pretrain, f'X{cnt}.npy'), X[i])
             cnt += 1
             
-    print('Process:', use_for_test)
-    for i in tqdm(range(multi_labels_X.shape[0]), total=multi_labels_X.shape[0]):
-        np.save(os.path.join(out_dir_pretrain, f'X{cnt}.npy'), multi_labels_X[i])
-        cnt += 1        
+    # print('Process multi-label X: ', use_for_test)
+    # multi_labels_X = multi_labels_X.reshape(-1, multi_labels_X.shape[-1])   # flatten out 12 leads
+    # for i in tqdm(range(multi_labels_X.shape[0]), total=multi_labels_X.shape[0]):
+    #     np.save(os.path.join(out_dir_pretrain, f'X{cnt}.npy'), multi_labels_X[i])
+    #     cnt += 1        
     
     
     print('--------------------------------')
-    print('Summary: %d pretrain samples, %d finetune samples' % (cnt, single_labels_X.shape[0]))
+    print('Summary: %d pretrain samples' % cnt)
     print('--------------------------------')
     
-    np.save(os.path.join(out_dir_test, 'X.npy'), single_labels_X)
-    np.save(os.path.join(out_dir_test, 'Y.npy'), single_labels_Y)
+    # np.save(os.path.join(out_dir_test, 'X.npy'), single_labels_X)
+    # np.save(os.path.join(out_dir_test, 'Y.npy'), single_labels_Y)
     
 if __name__=="__main__":
-    processed_folder = "/mnt/disk4/nmduong/Time-Series-Pretraining/data_processing/ECG/PROCESSED"
-    save_folder = "/mnt/disk4/nmduong/Time-Series-Pretraining/data_processing/ECG/SPECIFIC_DATA"
+    processed_folder = "/mnt/disk1/nmduong/ECG-Pretrain/data_processing/ECG/PROCESSED"
+    save_folder = "/mnt/disk1/nmduong/ECG-Pretrain/data_processing/ECG/SPECIFIC_DATA"
     use_for_test = "ptb-xl"
     out_dir = os.path.join(save_folder, "TFC")
     out_dir_pretrain = os.path.join(out_dir, "pretrain")

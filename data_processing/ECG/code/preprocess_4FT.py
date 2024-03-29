@@ -1,7 +1,7 @@
 """
-Preprocess all folder in Will2Do datasets, including:
+Preprocess finetune folder in Will2Do datasets, including:
     - Cut into segments 1000 in lengths and store in corresponding folders
-    - Exclude some folders if necessary
+    - Only process exlcuded folder in preprocess.py
 """
 
 from helper_code import *
@@ -82,24 +82,10 @@ def process_single_dir(data_directory, full_classes):
         
         # real num samples > min num samples -> divide
         
+        assert n_samples>=num_samples, '%d - %d'%(n_samples, num_samples)
         if n_samples >= num_samples:
-            num_segments = int(n_samples / num_samples)
-            num_remains = n_samples - num_segments*num_samples
-            for i in range(num_segments):
-                with_channel = recording[:, int(i*num_samples): int(i*num_samples+num_samples)]
-                for j in range(with_channel.shape[0]):
-                    current_data_list.append(with_channel[j].reshape(-1))
-            
-            # remaining parts
-            if num_remains > 0 and exclude_name not in data_directory:
-                with_channel = recording[:, -num_remains:]
-                for i in range(with_channel.shape[0]):
-                    current_data_list.append(interp(with_channel[i].reshape(-1), num_samples))
-                
-        else:
-            if exclude_name in data_directory: break
-            for i in range(recording.shape[0]):
-                current_data_list.append(interp(recording[i].reshape(-1), num_samples))
+            with_channel = recording[:, :num_samples]
+            current_data_list.append(with_channel)  # keeps all 12 leads, split later
         
         data += current_data_list
         labels += [onehot_labels for _ in current_data_list]
@@ -133,12 +119,13 @@ def process_parent_dir(parent_directory):
 
 def main():
     os.makedirs(save_dir_path, exist_ok=True)
-    all_data_dirs = [os.path.join(raw_dir_path, r) for r in os.listdir(raw_dir_path) if os.path.isdir(os.path.join(raw_dir_path, r))]
+    # all_data_dirs = [os.path.join(raw_dir_path, r) for r in os.listdir(raw_dir_path) if os.path.isdir(os.path.join(raw_dir_path, r))]
+    all_data_dirs = [os.path.join(raw_dir_path, exclude_name)]
     
     cnt = 0
     for dt_dir in all_data_dirs:
-        if exclude_name in dt_dir:
-            continue
+        # if exclude_name in dt_dir:
+        #     continue
         dt_name = dt_dir.split('/')[-1]
         print('Processing %s ...'%dt_dir)
         datas, labels = process_parent_dir(dt_dir)
@@ -159,6 +146,8 @@ def main():
         os.makedirs(save_path, exist_ok=True)
         data_save_path = os.path.join(save_path, f'X.npy')
         label_save_path = os.path.join(save_path, f'y.npy')
+        print("X size: ", datas.shape)
+        print("Y size: ", labels.shape)
         np.save(data_save_path, datas)
         np.save(label_save_path, labels)
         
@@ -177,3 +166,9 @@ if __name__ == '__main__':
     print("Exclude interpolation in dataset %s" % exclude_name)
     print('-'*60)
     main()
+    
+"""
+X size:  (109185, 12, 1000)
+Y size:  (109185, 12, 50)
+Detect and process 109185 samples with multiple leads
+"""

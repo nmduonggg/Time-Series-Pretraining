@@ -46,7 +46,7 @@ class ECGDataset(Dataset):
 
         if isinstance(X_train, np.ndarray):
             self.x_data = torch.from_numpy(X_train)
-            self.y_data = torch.from_numpy(y_train).long() if y_train is not None else None
+            self.y_data = torch.from_numpy(y_train - 1).long() if y_train is not None else None
         else:
             self.x_data = X_train
             self.y_data = y_train
@@ -65,6 +65,8 @@ class ECGDataset(Dataset):
                 x_data_f[:, c:c+1, :] = fft.fft(self.x_data[:, c:c+1, :]).abs()
             # self.x_data_f =  #/(window_length) # rfft for real value inputs.
             self.x_data_f = x_data_f
+        else:
+            self.x_data_f = fft.fft(self.x_data).abs()
         self.len = X_train.shape[0]
 
         """Augmentation"""
@@ -111,6 +113,16 @@ class ECGPretrain(Dataset):
             """if the dimension is larger than 178, take the first 178 dimensions. If multiple channels, take the first channel"""
             self.len = subset_size
             print('Using subset for debugging, the datasize is:', self.len)
+            
+    def min_max_rescale(self, x):
+        max_ = torch.amax(x, dim=-1, keepdim=True)
+        min_ = torch.amin(x, dim=-1, keepdim=True)
+        eta = 1e-8
+        return (x - min_) / (max_ - min_ + eta)
+    
+    def normalize(self, x):
+        norm_ = x.norm(dim=-1, keepdim=True)
+        return x / norm_
 
     def __getitem__(self, index):
         if self.training_mode == "pre_train":
@@ -122,12 +134,27 @@ class ECGPretrain(Dataset):
             else:
                 x = x
             x_f = fft.fft(x).abs()
-            x = x.reshape(1, 1, -1)  # 1x1x1000
-            x_f = x_f.reshape(1, 1, -1)
-            # print(x.shape)
+            x = x.view(1, 1, -1).float()  # 1x1x1000
+            x_f = x_f.view(1, 1, -1).float()
+            
             aug1 = DataTransform_TD(x, self.config)
             aug1_f = DataTransform_FD(x_f, self.config)
+            
+            x = self.min_max_rescale(x) 
+            x_f = self.min_max_rescale(x_f)
+            aug1 = self.min_max_rescale(aug1)  
+            aug1_f = self.min_max_rescale(aug1_f)  
+            
+            
+            # x = self.normalize(x)
+            # x_f = self.normalize(x_f)
+            # aug1 = self.normalize(aug1)
+            # aug1_f = self.normalize(aug1_f)
+            
+            # print(x.max(), x_f.max(), aug1.max(), aug1_f.max())
+            
             self.y_data = torch.zeros(1)
+            
             return x.squeeze(0), self.y_data, aug1.squeeze(0), x_f.squeeze(0), aug1_f.squeeze(0)
 
     def __len__(self):

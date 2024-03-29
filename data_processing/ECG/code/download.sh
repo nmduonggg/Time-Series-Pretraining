@@ -1,0 +1,10 @@
+# Reduced PTXBL dataset
+wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=104YXUfgWVTJt86hE5B2VtW8P47WTADvh' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=104YXUfgWVTJt86hE5B2VtW8P47WTADvh" -O ../PROCESSED/PTBXL_REDUCE/x_train.npy && rm -rf /tmp/cookies.txt
+
+wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1wQFqJ6Cmz5ucKp4wjGy8Ifdo8TJkmccu' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1wQFqJ6Cmz5ucKp4wjGy8Ifdo8TJkmccu" -O ../PROCESSED/PTBXL_REDUCE/x_test.npy && rm -rf /tmp/cookies.txt
+
+wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1Japu4o0TXosaywg-QM2QBEzX06dFtCVK' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1Japu4o0TXosaywg-QM2QBEzX06dFtCVK" -O ../PROCESSED/PTBXL_REDUCE/y_train.npy && rm -rf /tmp/cookies.txt
+
+wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1gZ-1k8LnKxLTs4QDvcUtu1PqzdhBKnre' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1gZ-1k8LnKxLTs4QDvcUtu1PqzdhBKnre" -O ../PROCESSED/PTBXL_REDUCE/y_test.npy && rm -rf /tmp/cookies.txt
+
+wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1uU5gdaaaLzVFCMs0gx9iJKSjnAHVDsSX' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1uU5gdaaaLzVFCMs0gx9iJKSjnAHVDsSX" -O ../PROCESSED/PTBXL_REDUCE/standard_scaler.pkl && rm -rf /tmp/cookies.txt

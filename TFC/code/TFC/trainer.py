@@ -62,7 +62,6 @@ def Trainer(args, model,  model_optimizer, classifier, classifier_optimizer, tra
         print('Fine-tune on Fine-tuning set')
         performance_list = []
         total_acc = []
-        total_test_acc
         global emb_finetune, label_finetune, emb_test, label_test
 
         for epoch in range(1, config.num_epoch + 1):
@@ -78,8 +77,6 @@ def Trainer(args, model,  model_optimizer, classifier, classifier_optimizer, tra
             
             track_dict['test_loss'] = test_loss
             track_dict['test_acc'] = test_acc
-        
-            logger.debug('MLP Testing: Loss=%.4f | ACC=%.4f percent'% (test_loss, test_acc*100))
             
             # save best fine-tuning model""
             global arch
@@ -93,23 +90,23 @@ def Trainer(args, model,  model_optimizer, classifier, classifier_optimizer, tra
                 track_dict['best_test_acc'] = max([max(total_acc), test_acc]) if len(total_acc) > 0 else 0
                     
             total_acc.append(test_acc)
+            
+            # train finetuning
 
-            params, valid_loss, emb_finetune, label_finetune, acc = model_finetune(args, model, model_optimizer, valid_dl, config,
+            params, valid_loss, emb_finetune, label_finetune, valid_acc = model_finetune(args, model, model_optimizer, valid_dl, config,
                                   device, training_mode, classifier=classifier, classifier_optimizer=classifier_optimizer)
             track_dict['finetune_loss'] = valid_loss
-            track_dict['finetune_acc'] = acc
+            track_dict['finetune_acc'] = valid_acc
             
-            model = params['model']
-            classifier = params['classifier']
-            model_optimizer = params['model_optimizer']
-            classifier_optimizer = params['classifier_optimizer']
+            # model = params['model']
+            # classifier = params['classifier']
+            # model_optimizer = params['model_optimizer']
+            # classifier_optimizer = params['classifier_optimizer']
             
-            scheduler.step(valid_loss)
+            scheduler.step(test_loss)
                 
-            logger.debug("MLP Training: Loss=%.4f | ACC=%.4f percent"% (valid_loss, acc*100))
-
-            """Use KNN as another classifier; it's an alternation of the MLP classifier in function model_test. 
-            Experiments show KNN and MLP may work differently in different settings, so here we provide both. """
+            logger.debug("MLP Training: Loss=%.4f | ACC=%.4f percent"% (valid_loss, valid_acc*100))
+            logger.debug('MLP Testing: Loss=%.4f | ACC=%.4f percent'% (test_loss, test_acc*100))
             
             if args.wandb: wandb.log(track_dict)
 
@@ -131,6 +128,10 @@ def model_pretrain(args, model, model_optimizer, criterion, train_loader, config
     model_optimizer.zero_grad()
 
     for batch_idx, (data, labels, aug1, data_f, aug1_f) in tqdm(enumerate(train_loader), total=len(train_loader)):
+        
+        # for n, p in model.named_parameters():
+        #     if torch.isnan(p).any(): print(n)
+        
         data = data.float().to(device)# data: [128, 1, 178], labels: [128]
         aug1 = aug1.float().to(device)  # aug1 = aug2 : [128, 1, 178]
         data_f, aug1_f = data_f.float().to(device), aug1_f.float().to(device)  # aug1 = aug2 : [128, 1, 178]
@@ -143,26 +144,30 @@ def model_pretrain(args, model, model_optimizer, criterion, train_loader, config
         """NTXentLoss: normalized temperature-scaled cross entropy loss. From SimCLR"""
         nt_xent_criterion = NTXentLoss_poly(device, config.batch_size, config.Context_Cont.temperature,
                                        config.Context_Cont.use_cosine_similarity) # device, 128, 0.2, True
-
+        
         loss_t = nt_xent_criterion(h_t, h_t_aug)
         loss_f = nt_xent_criterion(h_f, h_f_aug)
         l_TF = nt_xent_criterion(z_t, z_f) # this is the initial version of TF loss
 
-        l_1, l_2, l_3 = nt_xent_criterion(z_t, z_f_aug), nt_xent_criterion(z_t_aug, z_f), nt_xent_criterion(z_t_aug, z_f_aug)
-        loss_c = (1 + l_TF - l_1) + (1 + l_TF - l_2) + (1 + l_TF - l_3)
+        # l_1, l_2, l_3 = nt_xent_criterion(z_t, z_f_aug), nt_xent_criterion(z_t_aug, z_f), nt_xent_criterion(z_t_aug, z_f_aug)
+        # loss_c = (1 + l_TF - l_1) + (1 + l_TF - l_2) + (1 + l_TF - l_3)
 
         lam = 0.5
-        loss = lam*(loss_t + loss_f) + (1-lam)*loss_c
+        loss = lam*(loss_t + loss_f) + (1-lam)*l_TF
         
         track_dict['train_loss_t'] = loss_t.item()
         track_dict['train_loss_f'] = loss_f.item()
-        track_dict['train_loss_c'] = loss_c.item()
+        # track_dict['train_loss_c'] = loss_c.item()
         track_dict['train_loss_TF'] = l_TF.item()
         track_dict['train_loss'] = loss.item()
 
         total_loss.append(loss.item())
         loss.backward()
+        
+        # torch.nn.utils.clip_grad_value_(model.parameters(), clip_value=0.1)
+        
         model_optimizer.step()
+
         
         os.makedirs(os.path.join(experiment_log_dir, "saved_models"), exist_ok=True)
         chkpoint = {'model_state_dict': model.state_dict()}
@@ -177,9 +182,6 @@ def model_pretrain(args, model, model_optimizer, criterion, train_loader, config
 
 
 def model_finetune(args, model, model_optimizer, val_dl, config, device, training_mode, classifier=None, classifier_optimizer=None):
-    global labels, pred_numpy, fea_concat_flat
-    model.train()
-    classifier.train()
 
     total_loss = []
     total_acc = []
@@ -251,9 +253,6 @@ def model_finetune(args, model, model_optimizer, val_dl, config, device, trainin
 
     feas = feas.reshape([len(trgs), -1])  # produce the learned embeddings
 
-    labels_numpy = labels.detach().cpu().numpy()
-    pred_numpy = np.argmax(pred_numpy, axis=1)
-    
     ave_loss = torch.tensor(total_loss).mean()
     ave_acc = torch.cat(total_acc).mean()
     # ave_auc = torch.tensor(total_auc).mean()
