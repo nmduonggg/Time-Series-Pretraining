@@ -35,12 +35,12 @@ def Trainer(args, model,  model_optimizer, classifier, classifier_optimizer, tra
     logger.debug("Training started ....")
 
     criterion = nn.CrossEntropyLoss()
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(model_optimizer, 'min')
     
     track_dict = {}
     
     if training_mode == 'pre_train':
         print('Pretraining on source dataset')
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(model_optimizer, 'min')
         for epoch in range(1, config.num_epoch + 1):
             # Train and validate
             print("Epoch %d" % epoch)
@@ -48,6 +48,7 @@ def Trainer(args, model,  model_optimizer, classifier, classifier_optimizer, tra
             train_loss = model_pretrain(args, model, model_optimizer, criterion, train_dl, config, device, training_mode, experiment_log_dir)
             logger.debug('\nPre-training Epoch : '+str(epoch) + ' Train Loss : '+str(train_loss.item()))
             track_dict['train_loss_epoch'] = train_loss.item()
+            scheduler.step(train_loss)
             
             if args.wandb: wandb.log(track_dict)
 
@@ -64,6 +65,8 @@ def Trainer(args, model,  model_optimizer, classifier, classifier_optimizer, tra
         total_acc = []
         global emb_finetune, label_finetune, emb_test, label_test
 
+        model_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(model_optimizer, 'min')
+        classifier_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(classifier_optimizer, 'min')
         for epoch in range(1, config.num_epoch + 1):
             logger.debug(f'\nEpoch : {epoch}')
             
@@ -103,7 +106,8 @@ def Trainer(args, model,  model_optimizer, classifier, classifier_optimizer, tra
             # model_optimizer = params['model_optimizer']
             # classifier_optimizer = params['classifier_optimizer']
             
-            scheduler.step(test_loss)
+            model_scheduler.step(test_loss)
+            classifier_scheduler.step(test_loss)
                 
             logger.debug("MLP Training: Loss=%.4f | ACC=%.4f percent"% (valid_loss, valid_acc*100))
             logger.debug('MLP Testing: Loss=%.4f | ACC=%.4f percent'% (test_loss, test_acc*100))
@@ -125,7 +129,6 @@ def model_pretrain(args, model, model_optimizer, criterion, train_loader, config
 
     track_dict = {}
     # optimizer
-    model_optimizer.zero_grad()
 
     for batch_idx, (data, labels, aug1, data_f, aug1_f) in tqdm(enumerate(train_loader), total=len(train_loader)):
         
@@ -149,18 +152,19 @@ def model_pretrain(args, model, model_optimizer, criterion, train_loader, config
         loss_f = nt_xent_criterion(h_f, h_f_aug)
         l_TF = nt_xent_criterion(z_t, z_f) # this is the initial version of TF loss
 
-        # l_1, l_2, l_3 = nt_xent_criterion(z_t, z_f_aug), nt_xent_criterion(z_t_aug, z_f), nt_xent_criterion(z_t_aug, z_f_aug)
-        # loss_c = (1 + l_TF - l_1) + (1 + l_TF - l_2) + (1 + l_TF - l_3)
+        l_1, l_2, l_3 = nt_xent_criterion(z_t, z_f_aug), nt_xent_criterion(z_t_aug, z_f), nt_xent_criterion(z_t_aug, z_f_aug)
+        loss_c = (1 + l_TF - l_1) + (1 + l_TF - l_2) + (1 + l_TF - l_3)
 
         lam = 0.5
         loss = lam*(loss_t + loss_f) + (1-lam)*l_TF
         
         track_dict['train_loss_t'] = loss_t.item()
         track_dict['train_loss_f'] = loss_f.item()
-        # track_dict['train_loss_c'] = loss_c.item()
+        track_dict['train_loss_c'] = loss_c.item()
         track_dict['train_loss_TF'] = l_TF.item()
         track_dict['train_loss'] = loss.item()
 
+        model_optimizer.zero_grad()
         total_loss.append(loss.item())
         loss.backward()
         
@@ -204,10 +208,6 @@ def model_finetune(args, model, model_optimizer, val_dl, config, device, trainin
         aug1 = aug1.float().to(device)
         aug1_f = aug1_f.float().to(device)
         
-        """if random initialization:"""
-        model_optimizer.zero_grad()  # The gradients are zero, but the parameters are still randomly initialized.
-        classifier_optimizer.zero_grad()  # the classifier is newly added and randomly initialized
-
         """Produce embeddings"""
         z = model(data, data_f)
         # h_t, z_t, h_f, z_f = model(data, data_f)
@@ -241,7 +241,11 @@ def model_finetune(args, model, model_optimizer, val_dl, config, device, trainin
         total_acc.append(acc_bs.cpu())
         total_loss.append(loss.detach().item())
         
+        model_optimizer.zero_grad()
+        classifier_optimizer.zero_grad()
+        
         loss.backward()
+        
         model_optimizer.step()
         classifier_optimizer.step()
 

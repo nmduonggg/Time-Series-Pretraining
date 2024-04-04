@@ -3,8 +3,6 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
     --model cnn \
     --pretrain_dataset ECG \
     --target_dataset PTBXL \
-    --training_mode fine_tune_test \
-    --pretrain_lr 0.00005 \
-    --lr 0.00005 \
+    --training_mode pre_train \
     --use_pretrain \
     --wandb \

@@ -2,7 +2,6 @@ from torch import nn
 import torch
 from loss import ContrastiveWeight, AggregationRebuild, AutomaticWeightedLoss
 
-
 class TFC(nn.Module):
     def __init__(self, configs, args):
         super(TFC, self).__init__()

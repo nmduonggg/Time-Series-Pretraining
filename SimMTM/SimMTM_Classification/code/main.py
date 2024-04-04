@@ -2,9 +2,9 @@ import numpy as np
 from datetime import datetime
 import argparse
 from utils.utils import _logger
-from model import TFC
-from dataloader import data_generator
-from trainer import Trainer
+from model import get_model
+from dataloader_custom import data_generator
+from trainer import Trainer, Trainer_ft
 import os
 import torch
 
@@ -22,11 +22,15 @@ parser.add_argument('--pretrain_dataset', default='SleepEEG', type=str,
 parser.add_argument('--target_dataset', default='Epilepsy', type=str,
                     help='Dataset of choice: Epilepsy, FD_B, Gesture, EMG')
 
+parser.add_argument('--model', type=str, default='cnn')
+parser.add_argument('--use_pretrain', action='store_true')
+parser.add_argument('--wandb', action='store_true')
+
 parser.add_argument('--logs_save_dir', default='experiments_logs', type=str, help='saving directory')
 parser.add_argument('--device', default='cuda', type=str, help='cpu or cuda')
 parser.add_argument('--home_path', default=home_dir, type=str, help='Project home directory')
 parser.add_argument('--subset', action='store_true', default=False, help='use the subset of datasets')
-parser.add_argument('--log_epoch', default=5, type=int, help='print loss and metrix')
+parser.add_argument('--log_epoch', default=1, type=int, help='print loss and metrix')
 parser.add_argument('--draw_similar_matrix', default=10, type=int, help='draw similarity matrix')
 parser.add_argument('--pretrain_lr', default=0.0001, type=float, help='pretrain learning rate')
 parser.add_argument('--lr', default=0.0001, type=float, help='learning rate')
@@ -53,6 +57,18 @@ def set_seed(seed):
 
     return seed
 
+def reconstruct_conv_lead(pretrain_dict):
+    """
+    Reconstruct pretrain dict: add module name and idx before the ConvLead
+    """
+    all_lead_dict = dict()
+    n_leads = 12
+    for l in range(n_leads):
+        for k in pretrain_dict.keys():
+            all_lead_dict[f"convs.{l}.{k}"] = pretrain_dict[k].clone()
+            
+    return all_lead_dict
+
 
 def main(args, configs, seed=None):
     method = 'SimMTM'
@@ -73,12 +89,10 @@ def main(args, configs, seed=None):
     os.makedirs(logs_save_dir, exist_ok=True)
 
     # Load datasets
-    sourcedata_path = f"./dataset/{sourcedata}"  # './data/Epilepsy'
-    targetdata_path = f"./dataset/{targetdata}"
-
-    subset = args.subset  # if subset= true, use a subset for debugging.
-    train_dl, valid_dl, test_dl = data_generator(sourcedata_path, targetdata_path, configs, training_mode,
-                                                 subset=subset)
+    sourcedata_path = "/mnt/disk1/nmduong/ECG-Pretrain/data_processing/ECG/SPECIFIC_DATA/TFC/pretrain"
+    targetdata_path = "/mnt/disk1/nmduong/ECG-Pretrain/data_processing/ECG/PROCESSED/PTBXL_REDUCE/"
+    subset = args.subset # if subset= true, use a subset for debugging.
+    train_dl, valid_dl, test_dl = data_generator(sourcedata_path, targetdata_path, configs, training_mode, subset = subset)
 
     # set seed
     if seed is not None:
@@ -109,24 +123,71 @@ def main(args, configs, seed=None):
     logger.debug("=" * 45)
 
     # Load Model
-    model = TFC(configs, args).to(device)
-    params_group = [{'params': model.parameters()}]
-    model_optimizer = torch.optim.Adam(params_group, lr=pretrain_lr, betas=(configs.beta1, configs.beta2),
-                                       weight_decay=0)
-    model_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=model_optimizer, T_max=pretrain_epoch)
+    TFC_model, classifier = get_model(configs, args)
+    TFC_model = TFC_model.to(device)
+    classifier = classifier.to(device)
+    
+    if args.use_pretrain:
+        # load saved model of this experiment
+        # load_from = os.path.join(os.path.join(logs_save_dir, experiment_description, run_description, args.model,
+        # f"pre_train_seed_{SEED}", "saved_models"))
+        load_from = '/mnt/disk1/nmduong/ECG-Pretrain/SimMTM/SimMTM_Classification/code/experiments_logs/ECG_2_PTBXL/ecgOnly/pre_train_2023_pt_0.5_0.0001_10_ft_0.0001_300/saved_models'
+        
+        print("The loading file path", load_from)
+        
+        chkpoint = torch.load(os.path.join(load_from, "_last.pt"), map_location=device)
+        torch.save(chkpoint, os.path.join(load_from, "_last_bkup.pt"))
+        
+        pretrained_dict = chkpoint["model_state_dict"]
+        
+        if args.training_mode=='pre_train':
+            TFC_model.load_state_dict(pretrained_dict, strict=True)
+            print("Load for pretrain")
+        else:
+            pretrained_dict = reconstruct_conv_lead(pretrained_dict)
+            TFC_model.load_state_dict(pretrained_dict, strict=False)
+            print("Load for finetune")
 
+    else:
+        print("Not use pretrain, train from scratch")
+
+    for md in [TFC_model, classifier]:
+        for pram in md.parameters():
+            pram.require_grads=True
+        
+    model_optimizer = torch.optim.Adam(TFC_model.parameters(), lr=configs.lr_f, betas=(configs.beta1, configs.beta2), weight_decay=0)
+    model_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=model_optimizer, T_max=args.finetune_epoch)
+    
     # Trainer
-    best_performance = Trainer(model, model_optimizer, model_scheduler, train_dl, valid_dl, test_dl, device, logger,
+    if args.training_mode == 'pre_train':
+        print("Pretraining mode")
+        best_performance = Trainer(TFC_model, model_optimizer, model_scheduler, train_dl, valid_dl, test_dl, device, logger,
+                               args, configs, experiment_log_dir, seed)
+    else:
+        print("Finetune mode")
+        best_performance = Trainer_ft(TFC_model, model_optimizer, model_scheduler, train_dl, valid_dl, test_dl, device, logger,
                                args, configs, experiment_log_dir, seed)
 
     return best_performance
 
 
 if __name__ == '__main__':
+    import wandb
     args, unknown = parser.parse_known_args()
     device = torch.device(args.device)
-    exec (f'from config_files.{args.pretrain_dataset}_Configs import Config as Configs')
+    # exec (f'from config_files.{args.pretrain_dataset}_Configs import Config as Configs')
+    from config_files.OnlyECG_Configs import Config as Configs
     configs = Configs()
+    
+    if args.wandb:
+        wandb.login(key='60fd0a73c2aefc531fa6a3ad0d689e3a4507f51c')
+        wandb.init(
+            project='TimeSeriesPretrain',
+            group=f'SimMTM-{args.training_mode}',
+            name=f'SimMTM-{args.model}-ECG2PTBXL-{args.training_mode}', 
+            entity='aiotlab',
+            config=vars(configs)
+        )    
 
     main(args, configs)
 

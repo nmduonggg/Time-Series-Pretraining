@@ -17,3 +17,7 @@ Brant/pretrain_weights
 TFC/code/experiments_logs/*
 TFC/code/TFC/experiments_logs/*
 TFC/code/TFC/wandb
+
+SimMTM/SimMTM_Classification/code/experiments_logs/*
+SimMTM/SimMTM_Classification/code/wandb
+

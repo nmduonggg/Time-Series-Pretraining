@@ -23,6 +23,8 @@ parser.add_argument('--subset', action='store_true')
 # Model selection
 parser.add_argument("--model", default="cnn", type=str,
                     help="CNN or Transformer-based TFC encoder")
+parser.add_argument("--pretrain_lr", default=1e-4, type=float)
+parser.add_argument("--lr", default=1e-4, type=float)
 
 # 1. self_supervised pre_train; 2. finetune (itself contains finetune and test)
 parser.add_argument('--training_mode', default='fine_tune_test', type=str,
@@ -111,14 +113,17 @@ temporal_contr_model = None
 
 if use_pretrain:
     # load saved model of this experiment
-    load_from = os.path.join(os.path.join(logs_save_dir, experiment_description, run_description, args.model,
-    f"pre_train_seed_{SEED}", "saved_models"))
-    # load_from = '/mnt/disk4/nmduong/Time-Series-Pretraining/TFC/code/experiments_logs/ECG2PTBXL/ecgOnly/pre_train_seed_42_inception1dbase/saved_models/'
+    # load_from = os.path.join(os.path.join(logs_save_dir, experiment_description, run_description, args.model,
+    # f"pre_train_seed_{SEED}", "saved_models"))
+    load_from = '/mnt/disk1/nmduong/ECG-Pretrain/TFC/code/experiments_logs/ECG2PTBXL/ecgOnly/cnn/pre_train_seed_42/saved_models/'
     
     print("The loading file path", load_from)
     
     chkpoint = torch.load(os.path.join(load_from, "ckp_last.pt"), map_location=device)
-    pretrained_dict = chkpoint["model_state_dict"]
+    try:
+        pretrained_dict = chkpoint["model_state_dict"] 
+    except: 
+        pretrained_dict = chkpoint
     
     try:
         torch.save(pretrained_dict, os.path.join(load_from, "ckp_last_bkup.pt"))
@@ -127,7 +132,6 @@ if use_pretrain:
         print("Load for pretrain")
     except:
         pretrained_dict = reconstruct_conv_lead(pretrained_dict)
-        print(pretrained_dict)
         TFC_model.load_state_dict(pretrained_dict, strict=False)
         print("Load for finetune")
     # print(pretrained_dict.keys())
@@ -140,8 +144,8 @@ for md in [TFC_model, classifier]:
     for pram in md.parameters():
         pram.require_grads=True
         
-model_optimizer = torch.optim.Adam(TFC_model.parameters(), lr=configs.lr_f, betas=(configs.beta1, configs.beta2), weight_decay=3e-4)
-classifier_optimizer = torch.optim.Adam(classifier.parameters(), lr=configs.lr, betas=(configs.beta1, configs.beta2), weight_decay=3e-4)
+model_optimizer = torch.optim.Adam(TFC_model.parameters(), lr=args.pretrain_lr, betas=(configs.beta1, configs.beta2), weight_decay=3e-4)
+classifier_optimizer = torch.optim.Adam(classifier.parameters(), lr=args.lr, betas=(configs.beta1, configs.beta2), weight_decay=3e-4)
 
 # Trainer
 Trainer(args, TFC_model, model_optimizer, classifier, classifier_optimizer, train_dl, valid_dl, test_dl, device,
